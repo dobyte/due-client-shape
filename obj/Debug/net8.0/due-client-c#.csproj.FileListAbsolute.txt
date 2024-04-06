@@ -1,0 +1,14 @@
+/Users/fuxiao/Documents/due-client-c#/bin/Debug/net8.0/due-client-c#
+/Users/fuxiao/Documents/due-client-c#/bin/Debug/net8.0/due-client-c#.deps.json
+/Users/fuxiao/Documents/due-client-c#/bin/Debug/net8.0/due-client-c#.runtimeconfig.json
+/Users/fuxiao/Documents/due-client-c#/bin/Debug/net8.0/due-client-c#.dll
+/Users/fuxiao/Documents/due-client-c#/bin/Debug/net8.0/due-client-c#.pdb
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/due-client-c#.GeneratedMSBuildEditorConfig.editorconfig
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/due-client-c#.AssemblyInfoInputs.cache
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/due-client-c#.AssemblyInfo.cs
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/due-client-c#.csproj.CoreCompileInputs.cache
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/due-client-c#.dll
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/refint/due-client-c#.dll
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/due-client-c#.pdb
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/due-client-c#.genruntimeconfig.cache
+/Users/fuxiao/Documents/due-client-c#/obj/Debug/net8.0/ref/due-client-c#.dll
