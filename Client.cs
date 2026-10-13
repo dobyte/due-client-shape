@@ -39,6 +39,8 @@ public class Client
     private ReceiveHandler? ReceiveHandler;
     // 心跳消息处理器
     private HeartbeatHandler? HeartbeatHandler;
+    // 发送锁，避免心跳线程与业务线程并发发送导致帧交错
+    private readonly object sendLock = new object();
 
     public Client()
     {
@@ -59,6 +61,9 @@ public class Client
     {
         this.Addr = addr;
         this.Packer = packer;
+        this.Timer = new Timer(DEFAULT_HEARTBEAT_INTERVAL);
+        this.Timer.Elapsed += OnTimedEvent;
+        this.HeartbeatBuffer = this.Packer.PackHeartbeat();
     }
 
     public Client(string addr, int heartbeatInterval)
@@ -181,18 +186,14 @@ public class Client
     // 发送数据
     public bool Send(Int32 route, Int32? seq, byte[]? data)
     {
-        if (this.Socket != null && this.IsConnected())
+        try
         {
-            try
-            {
-                byte[] buffer = this.Packer.PackMessage(route, seq, data);
-                this.Socket.Send(buffer);
-                return true;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-            }
+            byte[] buffer = this.Packer.PackMessage(route, seq, data);
+            return this.SendBuffer(buffer);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
         }
 
         return false;
@@ -201,12 +202,30 @@ public class Client
     // 发送数据
     public bool Send(Int32 route, Int32? seq, object? data)
     {
+        try
+        {
+            byte[] buffer = this.Packer.PackMessage(route, seq, data);
+            return this.SendBuffer(buffer);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+        }
+
+        return false;
+    }
+
+    // 发送字节数据（加锁，保证与心跳包发送互斥）
+    private bool SendBuffer(byte[] buffer)
+    {
         if (this.Socket != null && this.IsConnected())
         {
             try
             {
-                byte[] buffer = this.Packer.PackMessage(route, seq, data);
-                this.Socket.Send(buffer);
+                lock (this.sendLock)
+                {
+                    this.Socket.Send(buffer);
+                }
                 return true;
             }
             catch (Exception e)
@@ -224,6 +243,13 @@ public class Client
         this.ReceiveSize();
     }
 
+    // 接收状态（缓冲区 + 已读偏移）
+    private class ReceiveState
+    {
+        public byte[] Buffer = Array.Empty<byte>();
+        public int Offset;
+    }
+
     // 接收包大小消息
     private void ReceiveSize()
     {
@@ -231,8 +257,8 @@ public class Client
         {
             try
             {
-                byte[] bytes = new byte[Packer.DEFAULT_SIZE_BYTES];
-                this.Socket.BeginReceive(bytes, 0, bytes.Length, SocketFlags.None, HandleReceivedSize, bytes);
+                ReceiveState state = new ReceiveState { Buffer = new byte[Packer.DEFAULT_SIZE_BYTES] };
+                this.Socket.BeginReceive(state.Buffer, 0, state.Buffer.Length, SocketFlags.None, this.HandleReceivedSize, state);
             }
             catch (Exception e)
             {
@@ -248,21 +274,35 @@ public class Client
         {
             try
             {
+                if (ar.AsyncState is not ReceiveState state)
+                {
+                    return;
+                }
+
                 int length = this.Socket.EndReceive(ar);
-                if (length == Packer.DEFAULT_SIZE_BYTES && ar.AsyncState is byte[] bytes)
+                if (length <= 0)
                 {
-                    int size = Packer.DEFAULT_SIZE_BYTES + this.Packer.UnpackSize(bytes);
-
-                    byte[] buff = new byte[size];
-
-                    Array.Copy(bytes, buff, Packer.DEFAULT_SIZE_BYTES);
-
-                    this.Socket.BeginReceive(buff, 4, size - Packer.DEFAULT_SIZE_BYTES, SocketFlags.None, this.HandleReceivedBody, buff);
-                }
-                else
-                {
+                    // 对端关闭连接
                     this.Disconnect();
+                    return;
                 }
+
+                state.Offset += length;
+                if (state.Offset < state.Buffer.Length)
+                {
+                    // 长度头未收全（TCP 分片），继续读取剩余字节
+                    this.Socket.BeginReceive(state.Buffer, state.Offset, state.Buffer.Length - state.Offset, SocketFlags.None, this.HandleReceivedSize, state);
+                    return;
+                }
+
+                int size = Packer.DEFAULT_SIZE_BYTES + this.Packer.UnpackSize(state.Buffer);
+
+                byte[] buff = new byte[size];
+
+                Array.Copy(state.Buffer, buff, Packer.DEFAULT_SIZE_BYTES);
+
+                ReceiveState bodyState = new ReceiveState { Buffer = buff, Offset = Packer.DEFAULT_SIZE_BYTES };
+                this.Socket.BeginReceive(buff, Packer.DEFAULT_SIZE_BYTES, size - Packer.DEFAULT_SIZE_BYTES, SocketFlags.None, this.HandleReceivedBody, bodyState);
             }
             catch (Exception e)
             {
@@ -278,32 +318,45 @@ public class Client
         {
             try
             {
-                int length = this.Socket.EndReceive(ar);
-                if (ar.AsyncState is byte[] buff && buff.Length - Packer.DEFAULT_SIZE_BYTES == length)
+                if (ar.AsyncState is not ReceiveState state)
                 {
-                    Packet packet = this.Packer.Unpack(buff);
+                    return;
+                }
 
-                    if (packet.IsHeartbeat)
-                    {
-                        if (this.HeartbeatHandler != null)
-                        {
-                            HeartbeatHandler(this, packet.Millisecond);
-                        }
-                    }
-                    else
-                    {
-                        if (this.ReceiveHandler != null && packet.Message != null)
-                        {
-                            ReceiveHandler(this, (Message)packet.Message);
-                        }
-                    }
+                int length = this.Socket.EndReceive(ar);
+                if (length <= 0)
+                {
+                    // 对端关闭连接
+                    this.Disconnect();
+                    return;
+                }
 
-                    this.ReceiveAsync();
+                state.Offset += length;
+                if (state.Offset < state.Buffer.Length)
+                {
+                    // 包体未收全（TCP 分片），继续读取剩余字节
+                    this.Socket.BeginReceive(state.Buffer, state.Offset, state.Buffer.Length - state.Offset, SocketFlags.None, this.HandleReceivedBody, state);
+                    return;
+                }
+
+                Packet packet = this.Packer.Unpack(state.Buffer);
+
+                if (packet.IsHeartbeat)
+                {
+                    if (this.HeartbeatHandler != null)
+                    {
+                        HeartbeatHandler(this, packet.Millisecond);
+                    }
                 }
                 else
                 {
-                    this.Disconnect();
+                    if (this.ReceiveHandler != null && packet.Message != null)
+                    {
+                        ReceiveHandler(this, (Message)packet.Message);
+                    }
                 }
+
+                this.ReceiveAsync();
             }
             catch (Exception e)
             {
@@ -345,19 +398,9 @@ public class Client
     // 发送心跳包
     private void Heartbeat()
     {
-        if (this.Socket != null && this.IsConnected())
+        if (this.HeartbeatBuffer != null)
         {
-            try
-            {
-                if (this.HeartbeatBuffer != null)
-                {
-                    this.Socket.Send(this.HeartbeatBuffer);
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-            }
+            this.SendBuffer(this.HeartbeatBuffer);
         }
     }
 }

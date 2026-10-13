@@ -91,6 +91,8 @@ public class Packer
             case 4:
                 bb.WriteInt32((Int32)route);
                 break;
+            default:
+                throw new Exception($"Unsupported routeBytes: {this.routeBytes}");
         }
 
         switch (this.seqBytes)
@@ -104,6 +106,8 @@ public class Packer
             case 4:
                 bb.WriteInt32((Int32)seq);
                 break;
+            default:
+                throw new Exception($"Unsupported seqBytes: {this.seqBytes}");
         }
 
         if (data != null)
@@ -165,6 +169,8 @@ public class Packer
             case 4:
                 route = bb.ReadInt32();
                 break;
+            default:
+                throw new Exception($"Unsupported routeBytes: {this.routeBytes}");
         }
 
         switch (this.seqBytes)
@@ -178,6 +184,8 @@ public class Packer
             case 4:
                 seq = bb.ReadInt32();
                 break;
+            default:
+                throw new Exception($"Unsupported seqBytes: {this.seqBytes}");
         }
 
         byte[] data = bb.ReadBytes((Int32)(bb.Remaining()));

@@ -1,4 +1,4 @@
-﻿using Due;
+using Due;
 using System;
 using System.IO;
 using System.Net;
@@ -35,12 +35,16 @@ class Hello
     {
         Console.WriteLine("connect");
 
-        while (true)
+        // 在独立线程中周期发送，避免阻塞连接回调线程
+        new Thread(() =>
         {
-            client.Send(1, 1, new Language("C#", "Microsoft"));
+            while (true)
+            {
+                client.Send(1, 1, new Language("C#", "Microsoft"));
 
-            Thread.Sleep(1000);
-        }
+                Thread.Sleep(1000);
+            }
+        }).Start();
     }
 
     // 断开连接成功

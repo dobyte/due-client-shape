@@ -126,7 +126,10 @@ public class ByteBuffer
     // 写入string值
     public void WriteString(string v)
     {
-
+        // 先写入长度（int32），再写入 UTF8 字节
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(v);
+        this.WriteInt32(bytes.Length);
+        this.WriteBytes(bytes);
     }
 
     // 读取int8值
@@ -193,6 +196,16 @@ public class ByteBuffer
         this.buffer.Read(buff, 0, n);
 
         return buff;
+    }
+
+    // 读取string值
+    public string ReadString()
+    {
+        // 先读取长度（int32），再读取对应长度的 UTF8 字节
+        int length = this.ReadInt32();
+        byte[] bytes = this.ReadBytes(length);
+
+        return System.Text.Encoding.UTF8.GetString(bytes);
     }
 
     // 跳到指定位置
