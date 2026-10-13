@@ -9,8 +9,14 @@ class Hello
 {
     static void Main()
     {
-        // 创建客户端
-        Client client = new();
+        // 创建打包器
+        Packer packer = new();
+
+        // 创建客户端：TCP 传输
+        // Client client = new(new Due.Network.Tcp(packer), packer);
+
+        // 创建客户端：WebSocket 传输
+        Client client = new(new Due.Network.Ws(packer), packer);
 
         // 监听连接
         client.OnConnect(ConnectHandler);
@@ -25,7 +31,7 @@ class Hello
         client.OnHeartbeat(HeartbeatHandler);
 
         // 开始连接
-        client.Connect("127.0.0.1:3553");
+        client.Connect("ws://127.0.0.1:3553");
 
         Console.ReadLine();
     }
